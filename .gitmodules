@@ -1,0 +1,9 @@
+[submodule "external/mruby"]
+	path = external/mruby
+	url = https://github.com/sasq64/mruby.git
+[submodule "external/fmt"]
+	path = external/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "external/doctest"]
+	path = external/doctest
+	url = https://github.com/onqtam/doctest.git
