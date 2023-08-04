@@ -1,11 +1,10 @@
-#include <fmt/core.h>
+//#include <fmt/core.h>
+#include <memory>
 
 #include <doctest/doctest.h>
 
 #include <mrb/conv.hpp>
-
 #include <mrb/get_args.hpp>
-
 #include <mrb/class.hpp>
 
 using namespace std::string_literals;
@@ -21,7 +20,8 @@ TEST_CASE("get_args")
         [](mrb_state* mrb, mrb_value) -> mrb_value {
             auto [b, s, f] = mrb::get_args<bool, std::string, float>(mrb);
             return mrb::to_value<std::string>(
-                fmt::format("{}/{}/{}", b, s, f), mrb);
+                    std::to_string(b) + "/" + s + "/" + std::to_string(f), mrb);
+                //fmt::format("{}/{}/{}", b, s, f), mrb);
         },
         MRB_ARGS_REQ(3));
 
@@ -122,7 +122,7 @@ TEST_CASE("retain") {
     mrb_load_string(ruby, "GC.start ; 3");
     CHECK(Person::counter == 1);
     mrb_close(ruby);
-    fmt::print("Closed\n");
+    //fmt::print("Closed\n");
     CHECK(Person::counter == 0);
 
 
@@ -140,26 +140,26 @@ TEST_CASE("retain") {
     f = mrb_load_string(ruby, "person = Person.new ; person.age = 3 ; other = "
                               "person.dup ; p other ; other.age");
 
-    fmt::print("Counter {}\n", Person::counter);
+    //fmt::print("Counter {}\n", Person::counter);
     CHECK(mrb::value_to<int>(f) == 3);
 
     mrb::add_function(
         ruby, "test_fn", [](mrb::ArgN n, int x, int y, int z, mrb_state* ruby) {
-            fmt::print("{} arg {} {} {}\n", n, x, y, z);
+            //fmt::print("{} arg {} {} {}\n", n, x, y, z);
             return x + y + z;
         });
 
     RUBY_CHECK("test_fn(1,2) == 3");
 
-    fmt::print("Counter {}\n", Person::counter);
+    //fmt::print("Counter {}\n", Person::counter);
     auto mv = mrb::new_obj<Person>(ruby);
 
     Person::instance.clear();
     p.clear();
-    fmt::print("Counter {}\n", Person::counter);
+    //fmt::print("Counter {}\n", Person::counter);
 
     mrb_close(ruby);
-    fmt::print("Counter {}\n", Person::counter);
+    //fmt::print("Counter {}\n", Person::counter);
 
     CHECK(Person::counter == 0);
 }

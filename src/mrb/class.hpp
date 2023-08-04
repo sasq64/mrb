@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <vector>

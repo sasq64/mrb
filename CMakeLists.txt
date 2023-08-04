@@ -81,46 +81,37 @@ endif()
 
 add_library(mrb_Warnings INTERFACE)
 target_compile_options(mrb_Warnings INTERFACE ${WARNINGS})
-
-add_subdirectory(external/fmt)
-#add_subdirectory(external/CLI11)
-#add_subdirectory(external/coreutils)
-#add_subdirectory(external/glm)
 add_subdirectory(external/doctest)
-#add_subdirectory(external/flite)
 
 set(MRB ${PROJECT_SOURCE_DIR}/external/mruby)
 set(MRB_LIB ${PROJECT_SOURCE_DIR}/builds/mruby/lib)
 set(MRB_INC ${MRB}/include)
+set(MRB_CONF mruby.cfg)
 
-if(RASPBERRY_PI)
-    add_library(mruby INTERFACE)
-    target_link_libraries(mruby INTERFACE ${MRB_LIB}/libmruby.a
-        ${MRB_LIB}/libmruby_core.a)
-    target_include_directories(mruby INTERFACE ${MRB}/include)
-    target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
-elseif(EMSCRIPTEN)
-    add_library(mruby INTERFACE)
+if(EMSCRIPTEN)
     set(MRB_LIB ${PROJECT_SOURCE_DIR}/builds/embuild/lib)
-    target_link_libraries(mruby INTERFACE ${MRB_LIB}/libmruby.a
-        ${MRB_LIB}/libmruby_core.a)
-    target_include_directories(mruby INTERFACE ${MRB}/include)
-    target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
-elseif(WIN32)
+    set(MRB_CONF emruby.cfg)
+endif()
+
+add_library(mruby INTERFACE)
+if(WIN32)
     set(EXTRA_LIBRARIES ws2_32)
     set(WINDIR ${PROJECT_SOURCE_DIR}/win)
-    add_library(mruby INTERFACE)
     target_link_libraries(mruby INTERFACE ${WINDIR}/mruby/libmruby.lib
         ${WINDIR}/mruby/libmruby_core.lib)
-    target_include_directories(mruby INTERFACE ${MRB}/include)
-    target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
 else()
-    add_library(mruby INTERFACE)
+    add_custom_target(mruby_rake ALL
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND MRUBY_CONFIG=${MRB_CONF} rake -f external/mruby/Rakefile -j8 -v)
+
+    add_dependencies(mruby murby_rake)
+
     target_link_libraries(mruby INTERFACE ${MRB_LIB}/libmruby.a
         ${MRB_LIB}/libmruby_core.a)
-    target_include_directories(mruby INTERFACE ${MRB}/include)
-    target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
 endif()
+
+target_include_directories(mruby INTERFACE ${MRB}/include)
+target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
 
 find_package(Threads REQUIRED)
 
@@ -133,6 +124,6 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     add_executable(mrbtest tests/testmain.cpp
         tests/mrb_conv_test.cpp tests/mrb_args_test.cpp)
     target_include_directories(mrbtest PRIVATE src)
-    target_link_libraries(mrbtest PRIVATE mrb_Warnings mrb::mrb fmt::fmt mruby doctest)
+    target_link_libraries(mrbtest PRIVATE mrb_Warnings mrb::mrb mruby doctest)
 endif()
 
