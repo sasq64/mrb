@@ -387,6 +387,7 @@ auto get_args(mrb_state* mrb, std::vector<mrb_value>& rest)
     return get_args<ARGS...>(
         mrb, &rest, nullptr, std::make_index_sequence<sizeof...(ARGS)>());
 }
+
 template <typename FX, typename RET, typename... ARGS>
 void gf(mrb_state* ruby, std::string const& name, FX const& fn,
     RET (FX::*)(ARGS...) const)

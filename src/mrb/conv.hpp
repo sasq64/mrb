@@ -42,16 +42,14 @@ struct Lookup
 struct Symbol
 {
     Symbol() = default;
-    Symbol(mrb_sym s) : sym(s) {}
+    Symbol(mrb_sym s) : sym(s) {} // NOLINT
     Symbol(mrb_state* mrb, std::string const& name) {
         sym = mrb_intern_cstr(mrb, name.c_str());
     }
-    // std::string sym;
     mrb_sym sym{};
-    // bool operator==(const char* t) const { return std::string(t) == sym; }
-    // operator std::string() { return sym; } // NOLINT
     operator uint32_t() { return sym; } // NOLINT
 };
+
 
 //! Convert ruby (mrb_value) type to native
 template <typename TARGET>
