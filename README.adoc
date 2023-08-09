@@ -118,7 +118,16 @@ Generic ruby objects passed into C++ can be captured using `mrb::Value`. This
 type is reference counted, so the value will not be garbage colleced as long
 as it is stored on the C++ side.
 
-=== API
+== Building
+
+mrb uses _CMake_ and pulls in _mruby_ as a git submodule.
+
+You need `rake` to build the ruby part.
+
+Currently, there is a dependency issue that makes the very first build fail.
+
+
+== API
 
 ==== make_class
 
