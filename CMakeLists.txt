@@ -5,7 +5,7 @@ include(ExternalProject)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 cmake_policy(SET CMP0072 NEW)
@@ -14,21 +14,7 @@ if(NOT EXISTS ${PROJECT_SOURCE_DIR}/external/mruby/Rakefile)
     message(FATAL_ERROR "mruby submodule not found. Have you done 'git submodule update --init' ?")
 endif()
 
-if(EXISTS /opt/vc)
-    set(RASPBERRY_PI 1)
-endif()
-
 # System wide directories and flags
-
-if(RASPBERRY_PI)
-    set(VC /opt/vc)
-    include_directories(SYSTEM
-        ${VC}/include
-        ${VC}/include/interface/vcos/pthreads
-        ${VC}/include/interface/vmcs_host/linux)
-    link_directories(${VC}/lib)
-    add_compile_definitions(RASPBERRY_PI)
-endif()
 
 if(WIN32)
   add_compile_options(/utf-8)
@@ -39,7 +25,6 @@ endif()
 if(APPLE)
     include_directories(SYSTEM /usr/local/include /opt/homebrew/include)
     link_directories(/usr/local/lib /opt/homebrew/lib)
-    #add_compile_options(-target x86_64-apple-macos10.15)
 endif()
 
 if(CMAKE_CXX_COMPILER MATCHES "/em\\+\\+(-[a-zA-Z0-9.])?$")
@@ -115,9 +100,10 @@ target_compile_definitions(mruby INTERFACE MRB_INT32 MRB_32BIT)
 
 find_package(Threads REQUIRED)
 
-add_library(_mrb INTERFACE)
+add_library(_mrb INTERFACE
+    src/mrb/value.hpp)
 target_include_directories(_mrb INTERFACE src)
-target_link_libraries(_mrb INTERFACE mruby)
+target_link_libraries(_mrb INTERFACE mruby mrb_Warnings)
 add_library(mrb::mrb ALIAS _mrb)
 
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)

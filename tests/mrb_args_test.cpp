@@ -1,11 +1,11 @@
-//#include <fmt/core.h>
+// #include <fmt/core.h>
 #include <memory>
 
 #include <doctest/doctest.h>
 
+#include <mrb/class.hpp>
 #include <mrb/conv.hpp>
 #include <mrb/get_args.hpp>
-#include <mrb/class.hpp>
 
 using namespace std::string_literals;
 
@@ -19,13 +19,12 @@ TEST_CASE("get_args")
         ruby, ruby->kernel_module, "test",
         [](mrb_state* mrb, mrb_value) -> mrb_value {
             auto [b, s, f] = mrb::get_args<bool, std::string, float>(mrb);
-            return mrb::to_value<std::string>(
-                    std::to_string(b) + "/" + s + "/" + std::to_string(f), mrb);
-                //fmt::format("{}/{}/{}", b, s, f), mrb);
+            auto res = (b ? "true"s : "false"s) + "/" + s + "/" + std::to_string(f);
+            return mrb::to_value(res, mrb);
         },
         MRB_ARGS_REQ(3));
 
-    RUBY_CHECK("test(false, 'hello', 3.14) == 'false/hello/3.14'");
+    RUBY_CHECK("test(false, 'hello', 3.14) == 'false/hello/3.140000'");
 }
 
 struct Person
@@ -45,18 +44,19 @@ TEST_CASE("class")
     mrb::make_class<Person>(ruby, "Person");
     mrb::add_method<Person>(
         ruby, "age=", [](Person* person, int age) { person->age = age; });
-    mrb::add_method<Person>(
-        ruby, "age", [](Person const* person) { return person->age; });
+    mrb::add_method<Person>(ruby, "age",
+                            [](Person const* person) { return person->age; });
 
     mrb::add_method<Person>(ruby, "copy_from", [](Person* self, Person* other) {
         self->name = other->name;
         self->age = other->age;
     });
 
-    mrb::add_method<Person>(
-        ruby, "dup", [](Person const* p) { return new Person(*p); });
+    mrb::add_method<Person>(ruby, "dup",
+                            [](Person const* p) { return new Person(*p); });
 
-    auto other_age = mrb_load_string(ruby,
+    auto other_age = mrb_load_string(
+        ruby,
         "person = Person.new ; person.age = 5 ; other = "
         "Person.new ; other.copy_from(person) ; person.age = 2 ; other.age");
     CHECK(mrb::value_to<int>(other_age) == 5);
@@ -73,59 +73,57 @@ TEST_CASE("symbols")
     auto* ruby = mrb_open();
     auto sym = mrb_intern_cstr(ruby, "testing");
     mrb_define_global_const(ruby, "TEST", mrb_symbol_value(sym));
-    mrb_load_string(ruby, "p TEST.class ; p TEST ; TEST = :testing ; p TEST"); 
+    mrb_load_string(ruby, "p TEST.class ; p TEST ; TEST = :testing ; p TEST");
 
-    //mrb_define_global_const(ruby, "TEST", mrb_check_intern_cstr(ruby, "testing"));
-    //  mrb_load_string(ruby, "p TEST.class ; p TEST ; TEST = :testing ; p TEST"); 
+    // mrb_define_global_const(ruby, "TEST", mrb_check_intern_cstr(ruby,
+    // "testing"));
+    //   mrb_load_string(ruby, "p TEST.class ; p TEST ; TEST = :testing ; p
+    //   TEST");
 
-
-    //RUBY_CHECK("TEST == :testing");
-    //mrb::Symbol sym { ruby, "testing"};
+    // RUBY_CHECK("TEST == :testing");
+    // mrb::Symbol sym { ruby, "testing"};
 }
 
 TEST_CASE("shared_ptr")
 {
     bool deleter_called = false;
-    auto p = std::shared_ptr<void>(nullptr, [&](void*) {
-            deleter_called = true;});
+    auto p =
+        std::shared_ptr<void>(nullptr, [&](void*) { deleter_called = true; });
     auto p2 = p;
     p = nullptr;
     CHECK(!deleter_called);
     p2 = nullptr;
     CHECK(deleter_called);
-
 }
 
-TEST_CASE("retain") {
+TEST_CASE("retain")
+{
 
     auto* ruby = mrb_open();
     mrb::make_class<Person>(ruby, "Person");
-    mrb::add_method<Person>(
-        ruby, "age", [](Person const*) { return 99; });
-    
+    mrb::add_method<Person>(ruby, "age", [](Person const*) { return 99; });
+
     mrb_load_string(ruby, "p = Person.new() ; p.age");
     CHECK(Person::counter == 1);
     mrb_load_string(ruby, "GC.start");
     CHECK(Person::counter == 0);
 
-    mrb::Value person{ ruby, new Person() };
+    mrb::Value person{ruby, new Person()};
     CHECK(Person::counter == 1);
-    //mrb_load_string(ruby, "p = Person.new() ; p.age");
-    //CHECK(Person::counter == 2);
-    //mrb_load_string(ruby, "GC.start");
-    //CHECK(Person::counter == 1);
+    // mrb_load_string(ruby, "p = Person.new() ; p.age");
+    // CHECK(Person::counter == 2);
+    // mrb_load_string(ruby, "GC.start");
+    // CHECK(Person::counter == 1);
 
-//mrb_define_global_const(ruby, "PERSON", v);
-  //      RUBY_CHECK("PERSON.age == 99");
+    // mrb_define_global_const(ruby, "PERSON", v);
+    //       RUBY_CHECK("PERSON.age == 99");
 
     person.clear();
     mrb_load_string(ruby, "GC.start ; 3");
     CHECK(Person::counter == 1);
     mrb_close(ruby);
-    //fmt::print("Closed\n");
+    // fmt::print("Closed\n");
     CHECK(Person::counter == 0);
-
-
 }
 
 #if 0

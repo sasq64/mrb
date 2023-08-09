@@ -30,7 +30,7 @@ inline std::vector<std::string> get_backtrace(mrb_state* ruby)
     for (int i = 0; i < ARY_LEN(mrb_ary_ptr(bt)); i++) {
         auto v = mrb_ary_entry(bt, i);
         auto s = mrb_funcall(ruby, v, "to_s", 0);
-        std::string line(RSTRING_PTR(s), RSTRING_LEN(s));
+        std::string const line(RSTRING_PTR(s), RSTRING_LEN(s));
         backtrace.emplace_back(line);
     }
     return backtrace;

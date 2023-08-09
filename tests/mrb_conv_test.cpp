@@ -2,9 +2,30 @@
 
 #include <mrb/conv.hpp>
 
+#include <any>
+
 using namespace std::string_literals;
 
 #define RUBY_CHECK(code) CHECK(mrb::value_to<bool>(mrb_load_string(ruby, code)))
+
+TEST_CASE("hash")
+{
+    auto* ruby = mrb_open();
+    mrb_value v;
+    v = mrb_load_string(ruby, "{hello: 3, momma: 55}");
+    auto res = mrb::value_to<std::unordered_map<std::string, int>>(v, ruby);
+    CHECK(res["hello"] == 3);
+    auto res2 = mrb::value_to<std::map<std::string, char>>(v, ruby);
+    CHECK(res2["momma"] == 55);
+
+    std::unordered_map<std::string, std::string> data;
+    data["poo"] = "sure";
+    data["ruby"] = "language";
+    mrb_define_global_const(ruby, "HASH", mrb::to_value(data, ruby));
+    mrb_load_string(ruby, "print(HASH)\n");
+    RUBY_CHECK("HASH['poo'] == 'sure'");
+}
+
 
 TEST_CASE("value_to")
 {

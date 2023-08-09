@@ -1,0 +1,169 @@
+= mrb
+
+C++ binder library for mruby
+
+.C++
+[source,c++]
+----
+class Game
+{
+public:
+    Game() = default;
+    void run(int frames) {}
+    std::unordered_map<std::string, std::string> const user {
+        {"name", "sasq"},
+        {"pass", "secret"}
+    };
+    int score = 0;
+    
+};
+
+----
+
+You use the default mruby C creation function;
+
+.C++
+[source,c++]
+----
+    auto* ruby = mrb_open();
+    mrb::make_class<Game>(ruby, "Game");
+    mrb::add_method<&Game::run>(ruby, "run");
+    mrb_close(ruby);
+    
+----
+
+Or you can use the provided mrb ruby class;
+
+.C++
+[source,c++]
+----
+    mrb::mruby ruby;
+    ruby.make_class<Game>("Game");
+    ruby.add_method<&Game::run>("run");
+    
+----
+
+Either way, ruby usage is the same;
+
+.Ruby
+[source,ruby]
+----
+    game = Game.new()
+    game.run(50)
+----
+
+You can expose fields with readers/writers
+
+.C++
+[source,c++]
+----
+    mrb::attr_reader<&Game::user>("user");
+    mrb::attr_accessor<&Game::score>("score");
+----
+
+.Ruby
+[source,ruby]
+----
+   print(game.user['name'])
+   game.score += 1
+----
+
+If you want to define your functions with the C api, you can use `mrb::get_args()`
+to help with argument parsing;
+
+.C++
+[source,c++]
+----
+    mrb_define_module_function(
+        ruby, ruby->kernel_module, "test",
+        [](mrb_state* mrb, mrb_value) -> mrb_value {
+            auto [b, s, f] = mrb::get_args<bool, std::string, float>(mrb);
+            return mrb::to_value<std::string>(
+                    std::to_string(b) + "/" + s + "/" + std::to_string(f), mrb);
+        },
+        MRB_ARGS_REQ(3));
+----
+
+.Ruby
+[source,ruby]
+----
+    if test(false, 'hello', 3.14) == 'false/hello/3.14'
+        print('Should get here!')
+    end
+----
+
+== Supported data types
+
+* Basic arithmetic types convert to floats or fixnums.
+* `std::string` convert to ruby strings
+* `std::array` and `std::vector` convert to arrays.
+* `std::map` and `std::unordered_map` will convert to and from hashes
+ (note that symbols will be converted to strings.
+
+All data is converted which means all methods can
+be seen as _pass-by-value_.
+
+== Memory Management
+
+Objects passed to Ruby will be freed by ruby during garbage collection using
+`delete`. If you want to use another deleter (or make ruby not free it) you
+can use
+
+[source,cpp]
+----
+mrb::set_deleter<Game>(ruby, [](Game* self) { /* Do something */ }
+----
+
+Generic ruby objects passed into C++ can be captured using `mrb::Value`. This
+type is reference counted, so the value will not be garbage colleced as long
+as it is stored on the C++ side.
+
+=== API
+
+==== make_class
+
+[source,c++]
+----
+RClass* mrb::make_class<CLASS>(mrb_state* ruby, const char* name, RClass* parent = nullptr)
+    
+RClass* mrb::make_noinit_class<CLASS>(mrb_state* ruby, const char* name, RClass* parent = nullptr)
+----
+
+Expose a C++ class to ruby. First version must have a parameterless constructor. Second version can not be called with `new` from ruby.
+
+==== add_method
+
+[source,c++]
+----
+
+mrb::add_method<&Method>(mrb_state* ruby, const char* name);
+
+mrb::add_method<Class>(mrb_state* ruby, const char* name, Function fn);
+----
+
+Expose a method in a registered class.
+
+[source,c++]
+----
+add_method<Game>(ruby, "add_score", [](Game* game, int score) {
+    game->score += score;
+});
+----
+
+==== accessors
+
+[source,c++]
+----
+mrb::attr_accessor<&Field>(mrb_state* ruby, const char* name);
+
+mrb::attr_reader<&Field>(mrb_state* ruby, const char* name);
+
+mrb::attr_writer<&Field>(mrb_state* ruby, const char* name);
+----
+
+Expose a field in a registered class.
+
+[source,c++]
+----
+mrb::attr_reader<&Game::score>(ruby, "score");
+----
