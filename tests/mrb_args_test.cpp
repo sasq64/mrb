@@ -17,7 +17,7 @@ TEST_CASE("get_args")
 
     mrb_define_module_function(
         ruby, ruby->kernel_module, "test",
-        [](mrb_state* mrb, mrb_value) -> mrb_value {
+        [](mrb_state* mrb, mrb_value self) -> mrb_value {
             auto [b, s, f] = mrb::get_args<bool, std::string, float>(mrb);
             auto res = (b ? "true"s : "false"s) + "/" + s + "/" + std::to_string(f);
             return mrb::to_value(res, mrb);
@@ -96,12 +96,55 @@ TEST_CASE("shared_ptr")
     CHECK(deleter_called);
 }
 
+TEST_CASE("callback")
+{
+    mrb::mruby ruby;
+    try {
+        ruby.exec(R"(
+def test()
+  call_nothing()
+end
+test()
+)", "test.rb");
+    } catch (mrb::mrb_exception &e) {
+        puts(e.msg.c_str());
+    }
+
+}
+
+
+TEST_CASE("callback")
+{
+    static mrb::Value callback;
+    static int counter = 0;
+    mrb::mruby ruby;
+
+    ruby.add_kernel_function("i_was_here", []() {
+        counter++;
+    });
+
+    ruby.add_kernel_function("callme", [](mrb::Block v) {
+        callback = v;
+    });
+
+    CHECK(!callback);
+    ruby.exec("callme { i_was_here() }");
+
+    CHECK(counter == 0);
+    CHECK(callback);
+
+    callback();
+    CHECK(counter == 1);
+
+}
+
 TEST_CASE("retain")
 {
 
     auto* ruby = mrb_open();
     mrb::make_class<Person>(ruby, "Person");
-    mrb::add_method<Person>(ruby, "age", [](Person const*) { return 99; });
+    int x = 99;
+    mrb::add_method<Person>(ruby, "age", [x](Person const*) { return x; });
 
     mrb_load_string(ruby, "p = Person.new() ; p.age");
     CHECK(Person::counter == 1);

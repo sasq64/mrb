@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base.hpp"
 #include "conv.hpp"
 #include "get_args.hpp"
 
@@ -7,6 +8,7 @@
 #include <array>
 #include <cassert>
 #include <functional>
+#include <numeric>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -32,17 +34,18 @@ RClass* make_class(mrb_state* mrb, const char* name = class_name<T>(),
         parent = mrb->object_class;
     }
     auto* rclass = mrb_define_class(mrb, name, parent);
-    Lookup<T>::rclasses[mrb] = rclass;
-    Lookup<T>::dts[mrb] = {
-        name, [](mrb_state*, void* data) { delete static_cast<T*>(data); }};
+    Lookup<T>::rclasses[mrb] = {
+        rclass,
+        { name, [](mrb_state*, void* data) { delete static_cast<T*>(data); } } };
     MRB_SET_INSTANCE_TT(rclass, MRB_TT_DATA);
     mrb_define_method(
         mrb, rclass, "initialize",
         [](mrb_state* mrb, mrb_value self) -> mrb_value {
             // fmt::print("Initialize\n");
-            auto* cls = new T();
-            DATA_PTR(self) = (void*)cls;            // NOLINT
-            DATA_TYPE(self) = &Lookup<T>::dts[mrb]; // NOLINT
+            auto* rv = (RBasic*)self.w;
+            auto* obj = new T();
+            DATA_PTR(self) = (void*)obj;            // NOLINT
+            DATA_TYPE(self) = &Lookup<T>::rclasses[mrb].data_type; // NOLINT
             return mrb_nil_value();
         },
         MRB_ARGS_NONE());
@@ -57,9 +60,24 @@ RClass* make_noinit_class(mrb_state* mrb, const char* name = class_name<T>(),
         parent = mrb->object_class;
     }
     auto* rclass = mrb_define_class(mrb, name, parent);
-    Lookup<T>::rclasses[mrb] = rclass;
-    Lookup<T>::dts[mrb] = {
-        name, [](mrb_state*, void* data) { delete static_cast<T*>(data); }};
+    Lookup<T>::rclasses[mrb] = {
+        rclass,
+        { name, [](mrb_state*, void* data) { delete static_cast<T*>(data); } } };
+    MRB_SET_INSTANCE_TT(rclass, MRB_TT_DATA);
+    return rclass;
+}
+
+template <typename T>
+RClass* make_shared_ptr_class(mrb_state* mrb, const char* name = class_name<T>(),
+                          RClass* parent = nullptr)
+{
+    if (parent == nullptr) {
+        parent = mrb->object_class;
+    }
+    auto* rclass = mrb_define_class(mrb, name, parent);
+    Lookup<T>::rclasses[mrb] = {
+        rclass,
+        { name, [](mrb_state*, void* data) { delete static_cast<T*>(data); } } };
     MRB_SET_INSTANCE_TT(rclass, MRB_TT_DATA);
     return rclass;
 }
@@ -68,7 +86,7 @@ template <typename T>
 RClass* make_module(mrb_state* mrb, const char* name = class_name<T>())
 {
     auto* rclass = mrb_define_module(mrb, name);
-    Lookup<T>::rclasses[mrb] = rclass;
+    Lookup<T>::rclasses[mrb] = { rclass, {} };
     return rclass;
 }
 
@@ -88,19 +106,19 @@ mrb_data_type* get_data_type(mrb_state* mrb)
 template <typename T>
 RClass* get_class(mrb_state* mrb)
 {
-    return Lookup<T>::rclasses[mrb];
+    return Lookup<T>::rclasses[mrb].rclass;
 }
 
 template <typename T>
 mrb_value new_data_obj(mrb_state* mrb)
 {
-    return mrb_obj_new(mrb, Lookup<T>::rclasses[mrb], 0, nullptr);
+    return mrb_obj_new(mrb, Lookup<T>::rclasses[mrb].rclass, 0, nullptr);
 }
 
 template <typename CLASS, typename N>
 void define_const(mrb_state* ruby, std::string const& name, N value)
 {
-    mrb_define_const(ruby, Lookup<CLASS>::rclasses[ruby], name.c_str(),
+    mrb_define_const(ruby, Lookup<CLASS>::rclasses[ruby].rclass, name.c_str(),
                      mrb::to_value(value, ruby));
 }
 
@@ -137,7 +155,7 @@ void add_class_method(mrb_state* ruby, std::string const& name, FX const& fn,
 {
     static FX _fn{fn};
     mrb_define_class_method(
-        ruby, Lookup<CLASS>::rclasses[ruby], name.c_str(),
+        ruby, Lookup<CLASS>::rclasses[ruby].rclass, name.c_str(),
         [](mrb_state* mrb, mrb_value) -> mrb_value {
             FX fn{_fn};
             auto args = mrb::get_args<ARGS...>(mrb);
@@ -164,8 +182,10 @@ void add_method(mrb_state* ruby, std::string const& name, FX const& fn,
                 RET (FX::*)(SELF, ARGS...) const)
 {
     static FX _fn{fn};
+    auto* lu = Lookup<CLASS>::rclasses[ruby].rclass;
+    if (lu == nullptr) { throw mrb_exception("Adding method to unregistered class"); }
     mrb_define_method(
-        ruby, Lookup<CLASS>::rclasses[ruby], name.c_str(),
+        ruby, lu, name.c_str(),
         [](mrb_state* mrb, mrb_value self) -> mrb_value {
             FX fn{_fn};
             auto args = mrb::get_args<ARGS...>(mrb);
@@ -245,12 +265,20 @@ struct mruby
 {
     std::shared_ptr<mrb_state> ruby;
 
+    mrb_state* ptr() { return ruby.get(); }
+
     mruby() { ruby = std::shared_ptr<mrb_state>(mrb_open()); }
 
     template <auto PTR>
     void add_class_method(std::string const& name)
     {
         mrb::add_class_method<PTR>(ruby.get(), name, PTR);
+    }
+
+    template <typename CLASS, typename FN>
+    void add_class_method(std::string const& name, FN const& fn)
+    {
+        mrb::add_class_method<CLASS>(ruby.get(), name, fn, &FN::operator());
     }
 
     template <auto PTR>
@@ -267,6 +295,13 @@ struct mruby
 
     template <typename T>
     RClass* make_class(const char* name = class_name<T>(),
+                       RClass* parent = nullptr)
+    {
+        return mrb::make_class<T>(ruby.get(), name, parent);
+    }
+
+    template <typename T>
+    RClass* make_noinit_class(const char* name = class_name<T>(),
                        RClass* parent = nullptr)
     {
         return mrb::make_class<T>(ruby.get(), name, parent);
@@ -301,8 +336,39 @@ struct mruby
         mrb::add_kernel_function(ruby.get(), name, fn, &FN::operator());
     }
 
+    void exec(std::string const& code, const char* file_name = nullptr) const
+    {
+        //mrb_load_string(ruby.get(), code);
+        auto* ctx = mrbc_context_new(ruby.get());
+        ctx->capture_errors = true;
+        // Set filename and line for debug messages
+        if (file_name != nullptr) {
+            mrbc_filename(ruby.get(), ctx, file_name);
+        }
+        ctx->lineno = 1;
 
-    void exec(const char* code) const { mrb_load_string(ruby.get(), code); }
+        // Parse and run the code in one go
+        mrb_load_string_cxt(ruby.get(), code.c_str(), ctx);
+        if (ruby->exc != nullptr) {
+            auto obj = mrb_funcall(ruby.get(), mrb_obj_value(ruby->exc),
+                                   "inspect", 0);
+            auto err = value_to<std::string>(obj) + "\n";
+
+            auto bt = mrb_funcall(ruby.get(), mrb_obj_value(ruby->exc), "backtrace", 0);
+            if (!mrb_nil_p(bt)) {
+                auto backtrace = value_to<std::vector<std::string>>(bt);
+                ruby->exc = nullptr;
+                for (auto&& line : backtrace) {
+                    err += line;
+                    err += "\n";
+                }
+            }
+            throw mrb_exception(err);
+            //ErrorState::stack.push_back({ErrorType::Exception, backtrace, err});
+            //fmt::print("Error: {}\n", err);
+        }
+
+    }
 };
 
 } // namespace mrb

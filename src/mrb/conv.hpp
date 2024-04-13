@@ -48,11 +48,15 @@ template <typename A, typename B>
 struct is_map<std::unordered_map<A, B>> : std::true_type
 {};
 
+struct ClassData
+{
+   RClass* rclass;
+   mrb_data_type data_type;
+};
 template <typename CLASS>
 struct Lookup
 {
-    static inline std::unordered_map<mrb_state*, RClass*> rclasses;
-    static inline std::unordered_map<mrb_state*, mrb_data_type> dts;
+    static inline std::unordered_map<mrb_state*, ClassData> rclasses;
 };
 
 struct Symbol
@@ -182,11 +186,11 @@ mrb_value to_value(RET&& r, mrb_state* const mrb)
 {
     // if constexpr (std::is_rvalue_reference_v<decltype(r)>) {
     using T = typename std::remove_pointer_t<std::remove_reference_t<RET>>;
-    using LU = Lookup<T>;
-    auto* o = mrb_obj_alloc(mrb, MRB_TT_DATA, LU::rclasses[mrb]);
+    auto& cdata = Lookup<T>::rclasses[mrb];
+    auto* o = mrb_obj_alloc(mrb, MRB_TT_DATA, cdata.rclass);
     auto obj = mrb_obj_value(o);
     DATA_PTR(obj) = r;
-    DATA_TYPE(obj) = &LU::dts[mrb];
+    DATA_TYPE(obj) = &cdata.data_type;
     return obj;
     //} else {
     //    return RET::pointers_must_be_moved;

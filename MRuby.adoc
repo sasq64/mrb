@@ -1,0 +1,98 @@
+
+
+=== Running code ===
+
+[source,cpp]
+----
+
+    // First create an instance of mruby
+    auto* ruby = mrb_open();
+
+    // Create a ruby context
+    auto* ctx = mrbc_context_new(ruby);
+    ctx->capture_errors = true;
+
+    // Set filename and line for debug messages
+    mrbc_filename(ruby, ctx, "test.rb");
+    ctx->lineno = 1;
+
+    // Parse and run the code in one go
+    mrb_load_string_cxt(ruby, "year = 2024 ; print('hello')", ctx);
+
+    // Context retains state, like symbols.
+    // mrb_symbol_name() can be used to get the name of a symbol.
+    char const* year = mrb_symbol_name(ruby, ctx->syms[0]);
+
+    mrbc_context_free(ruby, ctx);
+
+----
+
+=== mrb_value ===
+
+Ruby values are represented by the struct `mrb_value`.
+
+[source,cpp]
+----
+
+mrb_value result = mrb_load_string(ruby, "2+2");
+
+// We can check the type of values with the `mrb_*_p()` macros,
+// and convert to C type with `mrb_*()`.
+if (mrb_int_p(result)) {
+    int val = mrb_integer(result);
+    assert(val == 4);
+}
+
+----
+
+`mrb_value` is actually a struct holding a single integer value that can represent any type. This is how it is layed out when mruby is compiled as 64 bit;
+
+==== 64bit word with inline float ====
+----
+                Low byte
+ *   nil   : ...0000 0000 (all bits are 0)
+ *   false : ...0000 0100 (mrb_fixnum(v) != 0)
+ *   true  : ...0000 1100
+ *   undef : ...0001 0100
+ *   symbol: ...0001 1100 (use only upper 32-bit as symbol value)
+ *   fixnum: ...IIII III1
+ *   float : ...FFFF FF10 (51 bit significands; require MRB_64BIT)
+ *   object: ...PPPP P000
+----
+
+So for all non-arithmetic types, the ruby type is represented by an _object_. Mruby takes advantage of the fact that all allocations are at aligned to 32-bits so the value can be identified as a pointer and directly used as such.
+
+All ruby object begin with the same header that can identify it;
+
+[source,cpp]
+----
+  struct RClass *c;
+  struct RBasic *gcnext;
+  enum mrb_vtype tt:8;
+  uint32_t color:3;
+  uint32_t flags:21;
+----
+
+So we can get a pointer to the object class, and `tt` holds the type.
+
+(`gcnext` forms a linked list for all object in the garbage collectors gray list).
+
+=== Classes ===
+
+A class can be created with
+
+`mrb_define_class(mrb_state*, const char* name, RClass* parent)`
+
+When binding MRuby to C/C++ objects, the type of the mruby object will be `TT_Data`, and instances of the class will be represented by an mrb_value (of object type) point to an `RData`. The RData struct contains a `void*` to whatever custom data you want (normally a C++ object).
+
+RData also contains a pointer to an `mrb_data_type`, which holds a function pointer to the deleter. This function normally just call `delete` on the object.
+
+=== Garbage collection ===
+
+Ruby uses garbage collection to free unused objects, so care has
+to be taken when they reference memory allocated in C.
+
+In general; as soon as you create a ruby object using `mrb_obj_alloc()`, it is registered with the garbage collector and will be freed when it goes out of scope. In the normal case (above) this will cause the deleter to be called, which will delete the object.
+
+To avoid objects being prematurely freed after creation, all objects created using `mrb_obj_alloc()` is added the "GC arena". Any objects referenced from the arena will not be garbage collected, but the arena is cleared when returning back to the ruby VM from your custom C code, so it is only meant to stop the garbage collector from deleting it before you are done with the work on the C side.
+

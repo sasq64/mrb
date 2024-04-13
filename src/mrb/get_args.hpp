@@ -12,13 +12,9 @@
 #include <vector>
 
 namespace mrb {
-struct ArgN
-{
-    int n;
-    operator int() const { return n; } // NOLINT
-};
 
 // get_spec() - generate a spec string for ruby get args
+
 
 template <typename ARG>
 size_t get_spec(mrb_state* mrb, std::vector<char>&, std::vector<void*>&, ARG*);
@@ -29,18 +25,12 @@ inline size_t get_spec(mrb_state*, std::vector<char>&, std::vector<void*>&,
     return 0;
 }
 
-inline size_t get_spec(mrb_state*, std::vector<char>&, std::vector<void*>&,
-                       ArgN*)
-{
-    return 0;
-}
-
 template <typename OBJ>
 inline size_t get_spec(mrb_state* mrb, std::vector<char>& target,
                        std::vector<void*>& ptrs, OBJ** p)
 {
     ptrs.push_back(p);
-    ptrs.push_back(&Lookup<OBJ>::dts[mrb]);
+    ptrs.push_back(&Lookup<OBJ>::rclasses[mrb].data_type);
     target.push_back('d');
     return target.size();
 }
@@ -110,6 +100,17 @@ inline size_t get_spec(mrb_state*, std::vector<char>& target,
     return target.size();
 }
 
+template <typename OBJ>
+inline size_t get_spec(mrb_state* mrb, std::vector<char>& target,
+                       std::vector<void*>& ptrs, OBJ* p)
+{
+    ptrs.push_back(p);
+    ptrs.push_back(&Lookup<OBJ>::dts[mrb]);
+    target.push_back('d');
+    return target.size();
+}
+
+
 // to_mrb and mrb_to are used to convert between C++ and ruby types as needed.
 // ie std::string <-> const char*, float <=> mrb_float
 
@@ -174,6 +175,18 @@ struct to_mrb<std::array<T, N>>
     using type = mrb_value;
 };
 
+template <typename T>
+struct to_mrb<std::vector<T>>
+{
+    using type = mrb_value;
+};
+
+template <typename KEY, typename VAL>
+struct to_mrb<std::unordered_map<KEY, VAL>>
+{
+    using type = mrb_value;
+};
+
 template <typename TARGET, typename SOURCE>
 auto mrb_to(SOURCE const& s, mrb_state* mrb)
 {
@@ -181,14 +194,14 @@ auto mrb_to(SOURCE const& s, mrb_state* mrb)
         return mrb;
     } else if constexpr (std::is_same_v<Symbol, TARGET>) {
         return Symbol{mrb_sym(s)};
-    } else if constexpr (std::is_same_v<ArgN, SOURCE>) {
-        return TARGET{mrb_get_argc(mrb)};
     } else if constexpr (std::is_same_v<Block, TARGET>) {
         return Block{s.val, mrb};
     } else if constexpr (std::is_same_v<Value, TARGET>) {
         return Value{mrb, s};
     } else if constexpr (std::is_same_v<mrb_value, SOURCE>) {
         return value_to<TARGET>(s, mrb);
+    } else if constexpr (std::is_pointer_v<SOURCE> && std::is_same_v<std::remove_pointer_t<SOURCE> , TARGET>) {
+        return *s;
     } else {
         return static_cast<std::remove_reference_t<TARGET>>(s);
     }
@@ -205,9 +218,10 @@ auto mrb_to(SOURCE const& s, mrb_state* mrb)
 
 template <typename Target,
           std::enable_if_t<!std::is_pointer_v<Target>, bool> = true>
-Target* self_to(mrb_value self)
+auto self_to(mrb_value self)
 {
-    return static_cast<Target*>(
+    using T = std::remove_const_t<std::remove_reference_t<Target>>;
+    return *static_cast<T*>(
         (static_cast<struct RData*>(mrb_ptr(self)))->data);
 }
 
@@ -223,7 +237,7 @@ template <class... ARGS, size_t... A>
 auto get_args(mrb_state* mrb, int* num, std::index_sequence<A...>)
 {
     // A tuple to store the arguments. Types are converted to corresponding
-    // mruby types
+    // types that mruby can handle (ie std::string becomes const char *)
     std::tuple<typename to_mrb<ARGS>::type...> target;
 
     std::vector<char> v;
@@ -233,10 +247,14 @@ auto get_args(mrb_state* mrb, int* num, std::index_sequence<A...>)
         *num =  mrb_get_argc(mrb);
     }
 
-    // Build spec string, one character per type
+    // Build spec string, one character per type. arg_ptrs should end up
+    // with one pointer per type. Third argument is the pointer to the value
+    // in the created tuple. Often get_spec() just stores this pointer into
+    // arg_ptrs
     ((get_spec(mrb, v, arg_ptrs, &std::get<A>(target))), ...);
     v.push_back(0);
     mrb_get_args_a(mrb, v.data(), arg_ptrs.data());
+    // Convert arguments back from mruby to real types (ie const char* -> std::string)
     return std::tuple{mrb_to<ARGS>(std::get<A>(target), mrb)...};
 }
 
